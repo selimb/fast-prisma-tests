@@ -1,9 +1,9 @@
 import request from 'supertest'
-import { app, prisma } from '../src/app'
+import { app } from '../src/app'
+import { usingDb } from './helpers/fast-prisma-tests'
 
-afterAll(async () => {
-  await prisma.$disconnect()
-})
+// NEW
+usingDb()
 
 const user = {
   name: 'user 1',
@@ -21,8 +21,11 @@ test('a user is added successfully', async () => {
   expect(response.body.id).toBeDefined()
 })
 
-test('a user with the same email is rejected', () => {
-  return request(app)
+test('a user with the same email is rejected', async () => {
+  // NEW: Don't depend on previous tests
+  await request(app).post('/user').send(user).expect(200)
+
+  await request(app)
     .post('/user')
     .send(user)
     .set('Accept', 'application/json')
@@ -31,6 +34,9 @@ test('a user with the same email is rejected', () => {
 })
 
 test('correct list of users returned', async () => {
+  // NEW: Don't depend on previous tests
+  await request(app).post('/user').send(user).expect(200)
+
   const response = await request(app)
     .get('/user')
     .expect('Content-Type', /json/)
