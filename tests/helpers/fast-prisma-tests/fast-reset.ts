@@ -1,14 +1,12 @@
 import { PrismaClient } from '@prisma/client'
 import { DEFAULT_PG_SCHEMA_NAME } from './constants'
 
+const schemaName = DEFAULT_PG_SCHEMA_NAME
+
 /**
  * Truncates all tables, except for the migrations table.
- * @param schemaName Name of the postgres schema.
  */
-export async function resetDb(
-  db: PrismaClient,
-  schemaName = DEFAULT_PG_SCHEMA_NAME
-) {
+export async function resetDb(db: PrismaClient) {
   const tables: Array<{ tablename: string }> = await db.$queryRawUnsafe<
     Array<{ tablename: string }>
   >(`SELECT tablename FROM pg_tables WHERE schemaname='${schemaName}'`)

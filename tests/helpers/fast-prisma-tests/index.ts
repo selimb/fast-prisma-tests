@@ -1,20 +1,23 @@
-import { PrismaClient } from '@prisma/client'
-import { DEFAULT_PG_SCHEMA_NAME } from './constants'
+import { Prisma, PrismaClient } from '@prisma/client'
 import { maybeRunMigrations } from './fast-migrations'
 import { resetDb } from './fast-reset'
 import { logTest } from './log-test'
 import { TransactionWrapper } from './transaction-wrapper'
-import { buildUniquePgSchemaName } from './unique-schema'
+import { buildParallelDbUrl } from './parallel-db'
+import { PrismaErrorCode } from './constants'
 
 // NOTE: This should match the environment variable name used in `schema.prisma`.
 const DB_URL_ENV = 'DB_URL' as const
 const TEST_PARALLEL = process.env['TEST_PARALLEL'] !== 'false'
-const PG_SCHEMA_NAME = TEST_PARALLEL
-  ? buildUniquePgSchemaName()
-  : DEFAULT_PG_SCHEMA_NAME
-const DB_URL = process.env[DB_URL_ENV] + `?schema=${PG_SCHEMA_NAME};`
+let DB_URL = process.env[DB_URL_ENV]
+if (!DB_URL) {
+  throw new Error(`Missing env '${DB_URL_ENV}'`)
+}
+if (TEST_PARALLEL) {
+  DB_URL = buildParallelDbUrl(DB_URL)
+}
 // Need to set the new value back on `process.env` such that:
-// - `spawn` calls to use this as well.
+// - `spawn` calls can use this as well.
 process.env[DB_URL_ENV] = DB_URL
 
 // Easier to initialize this in the module scope since it's needed in `usingDb` as well as the `jest.mock` call below.
@@ -50,12 +53,27 @@ export function usingDb({
       throw new Error(`${usingDb.name} already called in the current scope.`)
     }
 
-    // Force a connection to catch errors early (e.g. bad environment or forgot to start postgres).
-    await db.$connect()
+    logTest(`Using ${DB_URL_ENV}=${DB_URL}`)
 
-    if (!didRunMigrations) {
-      logTest(`Using ${DB_URL_ENV}=${DB_URL}`)
-      await maybeRunMigrations(db)
+    let forceMigrations = false
+    // Force a connection to catch errors early (e.g. bad environment or forgot to start postgres).
+    try {
+      await db.$connect()
+    } catch (error) {
+      // The only expected error is DatabaseDoesNotExist, which will always happen on a fresh postgres instance.
+      if (
+        error instanceof Prisma.PrismaClientInitializationError &&
+        error.errorCode === PrismaErrorCode.DatabaseDoesNotExist
+      ) {
+        logTest('Database does not exist. Forcing migrations.')
+        forceMigrations = true
+      } else {
+        throw error
+      }
+    }
+
+    if (forceMigrations || !didRunMigrations) {
+      await maybeRunMigrations(db, { force: forceMigrations })
       didRunMigrations = true
     }
 
@@ -76,7 +94,7 @@ export function usingDb({
     if (transactional) {
       await txWrapper.rollbackCurrentTransaction()
     } else {
-      await resetDb(db, PG_SCHEMA_NAME)
+      await resetDb(db)
     }
 
     await db.$disconnect()

@@ -16,13 +16,16 @@ const prismaBinary = path.join(PROJECT_DIR, 'node_modules', '.bin', 'prisma')
 /**
  * Make sure migrations are up-to-date.
  */
-export async function maybeRunMigrations(db: PrismaClient): Promise<void> {
+export async function maybeRunMigrations(
+  db: PrismaClient,
+  { force }: { force: boolean }
+): Promise<void> {
   // This (≈0.05 sec) is a lot faster than systematically running `db push` (≈1 sec).
-  if (await shouldRunMigrations(db)) {
+  if (force || (await shouldRunMigrations(db))) {
     logTest('Running migrations...')
     spawn.sync(
       prismaBinary,
-      ['db', 'push', '--accept-data-loss', '--skip-generate'],
+      ['migrate', 'reset', '--force', '--skip-generate', '--skip-seed'],
       {
         env: process.env,
       }

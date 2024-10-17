@@ -3,3 +3,7 @@ export const PROJECT_DIR = process.cwd()
 
 /** Default postgres schema name. */
 export const DEFAULT_PG_SCHEMA_NAME = 'public'
+
+export const PrismaErrorCode = {
+  DatabaseDoesNotExist: 'P1003',
+}
